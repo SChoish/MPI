@@ -47,9 +47,7 @@ Outputs: checkpoints and logs under `results/` and `logs/` (if enabled).
 - **Policy manifold** $\mathcal{M}$: the policy class is treated as a statistical manifold with a chosen metric (e.g. Fisher–Rao or Wasserstein-2), inducing a geodesic distance $d_{\mathcal{M}}$.
 - **Energy** $\mathcal{E}[\pi]$: typically defined via the critic (e.g. $\mathbb{E}_{a\sim\pi}[-\hat{Q}(s,a)]$ or $-\mathbb{E}[A(s,a)]$).
 - **Single Proximal Policy Improvement (SPI)**: one implicit Euler (JKO) step on $\mathcal{M}$:
-  $
-  \pi_{k+1} \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau}\,d_{\mathcal{M}}^2(\pi,\pi_k) \right).
-  $
+  $\pi_{k+1} \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau}\,d_{\mathcal{M}}^2(\pi,\pi_k) \right).$
   Many behavior-anchored offline actor objectives (e.g. TD3+BC, ReBRAC, IQL-style extraction) can be interpreted as one such SPI step from the behavior or a base policy.
 
 ### Multi-step Proximal Policy Improvement (MPI)

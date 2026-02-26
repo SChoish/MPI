@@ -44,31 +44,31 @@ Outputs: checkpoints and logs under `results/` and `logs/` (if enabled).
 
 ### Geometric view of offline actor updates
 
-- **Policy manifold** \(\mathcal{M}\): the policy class is treated as a statistical manifold with a chosen metric (e.g. Fisher–Rao or Wasserstein-2), inducing a geodesic distance \(d_{\mathcal{M}}\).
-- **Energy** \(\mathcal{E}[\pi]\): typically defined via the critic (e.g. \(\mathbb{E}_{a\sim\pi}[-\hat{Q}(s,a)]\) or \(-\mathbb{E}[A(s,a)]\)).
-- **Single Proximal Policy Improvement (SPI)**: one implicit Euler (JKO) step on \(\mathcal{M}\):
-  \[
+- **Policy manifold** $\mathcal{M}$: the policy class is treated as a statistical manifold with a chosen metric (e.g. Fisher–Rao or Wasserstein-2), inducing a geodesic distance $d_{\mathcal{M}}$.
+- **Energy** $\mathcal{E}[\pi]$: typically defined via the critic (e.g. $\mathbb{E}_{a\sim\pi}[-\hat{Q}(s,a)]$ or $-\mathbb{E}[A(s,a)]$).
+- **Single Proximal Policy Improvement (SPI)**: one implicit Euler (JKO) step on $\mathcal{M}$:
+  $$
   \pi_{k+1} \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau}\,d_{\mathcal{M}}^2(\pi,\pi_k) \right).
-  \]
+  $$
   Many behavior-anchored offline actor objectives (e.g. TD3+BC, ReBRAC, IQL-style extraction) can be interpreted as one such SPI step from the behavior or a base policy.
 
 ### Multi-step Proximal Policy Improvement (MPI)
 
 - **Idea**: instead of a single proximal step per iteration, compose **K re-centered** proximal steps with the same energy and geometry:
-  - \(\pi_0 = \pi_{\mathrm{base}}\) (base algorithm’s actor after its usual update),
-  - \(\pi_i \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau_i}\,d_{\mathcal{M}}^2(\pi,\pi_{i-1}) \right)\), \(i=1,\ldots,K\).
+  - $\pi_0 = \pi_{\mathrm{base}}$ (base algorithm’s actor after its usual update),
+  - $\pi_i \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau_i}\,d_{\mathcal{M}}^2(\pi,\pi_{i-1}) \right)$, $i=1,\ldots,K$.
 - This corresponds to a **finer implicit discretization** of the same gradient flow, allowing **controlled advancement** beyond dataset support while each step remains proximal to the previous iterate.
-- **Monotone descent**: the (estimated) energy decreases along \(\pi_0,\pi_1,\ldots,\pi_K\) (up to optimization error).
+- **Monotone descent**: the (estimated) energy decreases along $\pi_0,\pi_1,\ldots,\pi_K$ (up to optimization error).
 
 ### Implementation (plug-in refinement)
 
 At each training iteration:
 
-1. Run the base algorithm’s **critic update** and **actor update** → obtain \(\pi_0\) (base policy).
-2. Apply **MPI**: from \(\pi_0\), solve K re-centered proximal subproblems with the current \(\hat{\mathcal{E}}\) and \(d_{\mathcal{M}}\) → obtain \(\{\pi_i\}_{i=1}^K\).
-3. Use the refined policies (e.g. \(\pi_1\) or \(\pi_2\)) for rollout or evaluation; base algorithm’s critic and training logic are unchanged.
+1. Run the base algorithm’s **critic update** and **actor update** → obtain $\pi_0$ (base policy).
+2. Apply **MPI**: from $\pi_0$, solve K re-centered proximal subproblems with the current $\hat{\mathcal{E}}$ and $d_{\mathcal{M}}$ → obtain $\{\pi_i\}_{i=1}^K$.
+3. Use the refined policies (e.g. $\pi_1$ or $\pi_2$) for rollout or evaluation; base algorithm’s critic and training logic are unchanged.
 
-So: **\(\pi_{\mathrm{base}}\)** = base algorithm actor; **\(\pi_1,\pi_2,\ldots\)** = MPI-refined policies (paper table reports \(\pi_{\mathrm{base}}\), \(\pi_1\), \(\pi_2\) on D4RL).
+So: **$\pi_{\mathrm{base}}$** = base algorithm actor; **$\pi_1,\pi_2,\ldots$** = MPI-refined policies (paper table reports $\pi_{\mathrm{base}}$, $\pi_1$, $\pi_2$ on D4RL).
 
 ---
 
@@ -78,8 +78,8 @@ So: **\(\pi_{\mathrm{base}}\)** = base algorithm actor; **\(\pi_1,\pi_2,\ldots\)
 |--------------------------|----------------------|
 | IQL, TD3+BC, CQL, AWAC, SAC-N, EDAC | ReBRAC, FQL |
 
-- **Geometry**: Wasserstein-2 (and Sinkhorn approximation where needed); diagonal-Gaussian and deterministic policies use closed-form \(d_{\mathcal{M}}\) where applicable.
-- **Energy** \(\hat{\mathcal{E}}\) is algorithm-specific (e.g. \(-\hat{Q}(s,\pi(s))\), \(-\hat{A}\), or entropy-regularized Q terms). Config key `energy_function_type` can switch between Q-based and advantage-based energy for IQL/AWAC.
+- **Geometry**: Wasserstein-2 (and Sinkhorn approximation where needed); diagonal-Gaussian and deterministic policies use closed-form $d_{\mathcal{M}}$ where applicable.
+- **Energy** $\hat{\mathcal{E}}$ is algorithm-specific (e.g. $-\hat{Q}(s,\pi(s))$, $-\hat{A}$, or entropy-regularized Q terms). Config key `energy_function_type` can switch between Q-based and advantage-based energy for IQL/AWAC.
 
 ---
 
@@ -129,9 +129,9 @@ w2_weights: [100.0, 100.0]
 ## Implementation notes
 
 - **Critic**: updated only with the base actor (Actor0); no change to the base algorithm’s critic update.
-- **Distance \(d_{\mathcal{M}}\)**: for diagonal Gaussian policies, W2 is computed in closed form; otherwise Sinkhorn (e.g. GeomLoss for PyTorch, OTT for JAX) is used.
-- **Energy**: each algorithm implements its own energy (e.g. `compute_energy_function`); Actor1+ losses are energy + (weighted) \(d_{\mathcal{M}}^2(\pi_i,\pi_{i-1})\).
-- **Evaluation**: you can evaluate \(\pi_{\mathrm{base}}\) or any \(\pi_k\) (\(k\ge 1\)); the paper table reports \(\pi_{\mathrm{base}}\), \(\pi_1\), \(\pi_2\) on D4RL locomotion.
+- **Distance** $d_{\mathcal{M}}$: for diagonal Gaussian policies, W2 is computed in closed form; otherwise Sinkhorn (e.g. GeomLoss for PyTorch, OTT for JAX) is used.
+- **Energy**: each algorithm implements its own energy (e.g. `compute_energy_function`); Actor1+ losses are energy + (weighted) $d_{\mathcal{M}}^2(\pi_i,\pi_{i-1})$.
+- **Evaluation**: you can evaluate $\pi_{\mathrm{base}}$ or any $\pi_k$ ($k\ge 1$); the paper table reports $\pi_{\mathrm{base}}$, $\pi_1$, $\pi_2$ on D4RL locomotion.
 
 ---
 

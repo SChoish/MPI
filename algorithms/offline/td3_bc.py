@@ -207,7 +207,7 @@ class TD3_BC:
             actor_loss.backward()
             self.actor_optimizer.step()
 
-            # Update the frozen target models (actor_target은 pogo_multi_main에서 관리)
+            # Update the frozen target models (actor_target은 mpi_main에서 관리)
             soft_update(self.critic_1_target, self.critic_1, self.tau)
             soft_update(self.critic_2_target, self.critic_2, self.tau)
 
@@ -216,7 +216,7 @@ class TD3_BC:
     def compute_energy_function(
         self, actor: nn.Module, state: torch.Tensor, actions: Optional[torch.Tensor] = None, seed: Optional[int] = None
     ) -> torch.Tensor:
-        """Energy function: -Q (POGO multi-actor Actor1+용)
+        """Energy function: -Q (MPI multi-actor Actor1+용)
         
         Args:
             actor: Actor network

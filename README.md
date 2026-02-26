@@ -1,308 +1,159 @@
-# POGO Multi-Actor: CORL Integration
+# MPI: Multi-step Proximal Policy Improvement in Offline RL
 
-POGO_sv 프로젝트를 baseline으로 하여 CORL 프로젝트에 통합한 multi-actor offline reinforcement learning 알고리즘입니다.
+Offline reinforcement learning must balance two goals: policy updates should stay near dataset-supported actions to keep value estimates reliable, yet meaningful gains often require moving beyond the behavior distribution. This repository implements **Multi-step Proximal Policy Improvement (MPI)**, a plug-in refinement mechanism that composes sequential **re-centered** proximal steps on a policy manifold, enabling controlled improvement beyond dataset support while preserving local stability.
 
-## 빠른 시작
+**MPI** interprets many behavior-anchored offline actor updates as a **single proximal policy improvement (SPI)** step—an implicit discretization of a manifold gradient flow induced by a critic-defined energy. MPI then advances the same flow through multiple re-centered proximal steps per iteration, corresponding to a finer implicit (JKO-style) discretization. The framework accommodates multiple policy geometries (e.g. Fisher–Rao, Wasserstein-2) and works with deterministic and diagonal-Gaussian policies. Experiments on D4RL show that MPI consistently improves strong baselines (e.g. TD3+BC, ReBRAC, IQL), often reducing conservatism without destabilizing training.
 
-### 설치
+---
 
-```bash
-pip install geomloss PyYAML
-# JAX 버전 사용 시
-pip install jax jaxlib flax optax ott-jax
-```
+## Quick Start
 
-### 실행 예시
-
-```bash
-# PyTorch 버전 (IQL)
-python -m algorithms.offline.pogo_multi_main \
-    --config_path configs/offline/pogo_multi/halfcheetah/medium_v2_iql.yaml
-
-# JAX 버전 (ReBRAC)
-python -m algorithms.offline.pogo_multi_jax \
-    --config_path configs/offline/pogo_multi/halfcheetah/medium_v2_rebrac.yaml
-```
-
-## 프로젝트 개요
-
-이 프로젝트는 **각 기존 알고리즘의 구조를 그대로 유지**하면서, **Actor만 multi-actor로 교체**하여 학습하는 통합 프레임워크입니다.
-
-### 핵심 원칙
-
-- ✅ **각 알고리즘의 Critic, V, Q 구조는 변경 없음**
-- ✅ **Critic 업데이트는 Actor0만 사용** (모든 알고리즘 공통)
-- ✅ **Actor만 multi-actor로 교체** (개수와 loss만 변경)
-- ✅ **Policy loss에서만 multi-actor 학습** (Critic은 기존 방식 그대로)
-- ✅ **Config에서 algorithm 선택 가능** (`algorithm: iql`, `td3_bc`, `cql`, `awac`, `sac_n`, `edac`, `rebrac`, `fql`)
-- ✅ **JAX/PyTorch 양쪽 구현**: 동일한 구조와 로직을 따르는 두 가지 구현 제공
-
-### POGO 이론
-
-POGO(**Policy Optimization as a Gradient Flow in Offline RL**)는 **JKO (Jordan-Kinderlehrer-Otto) chain**을 기반으로 한 gradient flow 방법입니다:
-
-- **JKO Chain**: 연속적인 policy 업데이트를 이산화하여 `π₀ → π₁ → ... → πₙ` 형태로 학습
-- **W2 Distance**: 각 단계에서 이전 policy와의 Wasserstein-2 거리를 penalty로 사용
-- **Energy Function**: 각 알고리즘의 특성에 맞는 energy function을 정의하여 policy를 최적화
-
-**참고**: 각 알고리즘의 Critic/Q 로직은 그대로 유지하면서, Actor만 multi-actor(JKO chain)로 확장합니다.
-
-### Multi-Actor 구조
-
-- **Actor0**: 각 알고리즘의 원래 actor loss만 사용 (W2 penalty 없음)
-- **Actor1+**: Energy function + W2 distance to previous actor
-  - Loss: `Lᵢ = E(πᵢ) + w₂ᵢ · W₂(πᵢ, πᵢ₋₁)`
-
-### 지원 알고리즘
-
-**PyTorch 버전**: IQL, TD3_BC, CQL, AWAC, SAC-N, EDAC  
-**JAX 버전**: ReBRAC, FQL
-
-### 알고리즘별 Energy Function (Actor1+용)
-
-| 알고리즘 | Energy Function |
-|---------|----------------|
-| IQL | `-Q(state, π(state))` 또는 `-A` (`energy_function_type` config로 선택) |
-| AWAC | `-Q(state, π(state))` 또는 `-A` (`energy_function_type` config로 선택) |
-| SAC-N / EDAC | `α·log_π - Q_min` |
-| CQL | `α·log_π - Q` (BC/CQL stage에 따라) |
-| TD3_BC | `-Q(state, π(state))` |
-
-**Config 설정**:
-- `energy_function_type: "q"` (기본값): `-Q(state, π(state))` 사용
-- `energy_function_type: "advantage"`: `-A` (advantage) 사용 (IQL/AWAC만 해당)
-
-**참고**: Actor0는 각 알고리즘의 원본 `train()`/`update()` 로직으로 업데이트되며, Actor1+만 energy function + W2 distance를 사용합니다.
-
-## 프로젝트 구조
-
-```
-PORL/
-├── algorithms/
-│   ├── networks/               # 통합 네트워크 패키지 (PyTorch & JAX)
-│   │   ├── __init__.py        # 모든 클래스 re-export
-│   │   ├── actors.py           # PyTorch Actor (GaussianMLP, TanhGaussianMLP, DeterministicMLP 등)
-│   │   ├── actors_jax.py      # JAX Actor (GaussianMLP, TanhGaussianMLP, DeterministicMLP 등)
-│   │   ├── critics.py         # PyTorch Critic (FullyConnectedQFunction, EnsembleCritic 등)
-│   │   ├── critics_jax.py     # JAX Critic 구현
-│   │   ├── mlp.py             # PyTorch MLP 유틸리티 (build_mlp, init_module_weights 등)
-│   │   ├── mlp_jax.py         # JAX MLP 유틸리티
-│   │   ├── adapters.py        # ActorAPI(Protocol), PolicyAdapter
-│   │   └── policy_call.py     # get_action, act_for_eval, sample_K_actions
-│   └── offline/
-│       ├── pogo_multi_main.py      # PyTorch 버전 메인 스크립트
-│       ├── pogo_multi_jax.py       # JAX 버전 메인 스크립트
-│       ├── utils_pytorch.py        # PyTorch 유틸리티 (soft_update, ReplayBuffer, eval_actor 등)
-│       ├── utils_jax.py            # JAX 유틸리티 (AlgorithmInterface)
-│       ├── iql.py, cql.py, ...      # 각 알고리즘 구현
-│       │   └── compute_energy_function()  # Actor1+용 energy function (알고리즘별 구현)
-│       ├── fql.py                   # FQL 알고리즘 (JAX, Flow Policy 포함)
-│       ├── rebrac.py                # ReBRAC 알고리즘 (JAX)
-│       └── CODE_EVALUATION_REPORT.md # 코드 평가 보고서
-├── configs/
-│   └── offline/
-│       └── pogo_multi/              # 알고리즘별 설정 파일
-└── README.md                         # 이 파일
-```
-
-### 아키텍처 개요
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Training Loop                          │
-└─────────────────────────────────────────────────────────┘
-                            │
-        ┌───────────────────┴───────────────────┐
-        │                                         │
-┌───────▼────────┐                      ┌─────────▼────────┐
-│  Critic Update │                      │  Actor Update    │
-│  (Actor0만 사용)│                      │  (Multi-Actor)   │
-└───────┬────────┘                      └─────────┬────────┘
-        │                                         │
-        │  ┌──────────────────────────────────┐  │
-        │  │  AlgorithmInterface               │  │
-        │  │  - update_critic()                │  │
-        │  │  - compute_energy_function()     │  │
-        └──┼──────────────────────────────────┼──┘
-           │                                  │
-    ┌──────▼──────┐                  ┌────────▼────────┐
-    │  IQL/CQL/   │                  │  Actor0:        │
-    │  TD3_BC/... │                  │  [기존 loss]     │
-    │  (원래 구조) │                  │                 │
-    └─────────────┘                  │  Actor1+:       │
-                                      │  energy +       │
-                                      │  w2_weight * W2 │
-                                      └─────────────────┘
-```
-
-**핵심 설계 원칙**:
-1. **Critic 업데이트**: 각 알고리즘의 원래 방식 그대로 (Actor0만 사용)
-2. **Actor 업데이트**: Multi-actor 구조로 확장 (W2 regularization 추가)
-3. **AlgorithmInterface**: 각 알고리즘을 통일된 인터페이스로 추상화
-
-### 학습 흐름
-
-```
-[Batch: s, a, r, s', d]
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  trainer.train(batch) 또는 trainer.update(batch)              │
-│  → V, Q, Critic, Actor0 업데이트 (알고리즘 원본 그대로)        │
-└─────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  policy_freq마다 (IQL: 매 step, TD3_BC: 2 step마다)           │
-│  for i in [1, 2, ...]:                                       │
-│    energy = trainer.compute_energy_function(actor_i, ...)    │
-│    w2 = _compute_w2_distance(π_i, π_{i-1})                   │
-│    loss = energy + w2_weight * w2                            │
-│    actor_optimizers[i].step()                                 │
-└─────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│  actor_targets soft update (τ)                                │
-│  Critic target: trainer 내부에서만 업데이트 (main 미호출)      │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### W2 거리 계산 (`_compute_w2_distance`)
-
-Policy 타입에 따라 자동 선택:
-
-| 조건 | 방식 |
-|------|------|
-| Both Gaussian | Closed-form W2 (`||μ1-μ2||² + ||σ1-σ2||²`) |
-| Both Stochastic (not Gaussian) | Sinkhorn (PyTorch: GeomLoss, JAX: OTT-jax) |
-| At least one Deterministic | L2 |
-
-### Policy 타입 (`algorithms/networks/`)
-
-| 타입 | W2 | 속성 |
-|------|-----|------|
-| GaussianMLP | Closed-form | `is_gaussian=True`, `is_stochastic=True` |
-| TanhGaussianMLP | Sinkhorn (PyTorch: GeomLoss, JAX: OTT-jax) | `is_gaussian=False`, `is_stochastic=True` |
-| StochasticMLP | Sinkhorn (PyTorch: GeomLoss, JAX: OTT-jax) | `is_gaussian=False`, `is_stochastic=True` |
-| DeterministicMLP | L2 | `is_gaussian=False`, `is_stochastic=False` |
-
-**참고**: 모든 Actor는 `ActorAPI(Protocol)` 인터페이스를 구현하며, `deterministic_actions`, `sample_actions`, `log_prob_actions` 메서드를 제공합니다.
-
-### 핵심 파일 역할
-
-| 파일 | 역할 |
-|------|------|
-| `pogo_multi_main.py` | PyTorch 버전: 알고리즘 선택, Actor 생성, `_train_multi_actor`로 통합 학습 |
-| `pogo_multi_jax.py` | JAX 버전: ReBRAC/FQL 알고리즘, multi-actor 학습 |
-| `algorithms/networks/` | 통합 네트워크 패키지 (PyTorch & JAX Actor, Critic, MLP 유틸리티) |
-| `algorithms/networks/actors.py` | PyTorch Actor 클래스 (GaussianMLP, TanhGaussianMLP 등) |
-| `algorithms/networks/actors_jax.py` | JAX Actor 클래스 (GaussianMLP, TanhGaussianMLP 등) |
-| `algorithms/networks/adapters.py` | `ActorAPI(Protocol)` 인터페이스 정의 |
-| `utils_pytorch.py` | PyTorch 공통 유틸리티 (soft_update, ReplayBuffer, eval_actor 등) |
-| `utils_jax.py` | JAX 공통 유틸리티 (AlgorithmInterface) |
-| `policy_call.py` | 평가/학습 시 policy 호출 통일 |
-
-### Actor 생성 (`_create_actors`)
-
-- **Actor0**: `actor_creation.create_actor0()` — 알고리즘별 (예: IQL → GaussianMLP, TD3_BC → DeterministicMLP)
-- **Actor1+**: `algorithms.networks`의 POGO policies. `actor_configs` 미지정 시 Actor0 구조 추론 후 동일 타입 사용, `state_dict` 복사로 초기화
-- **인터페이스**: 모든 Actor는 `ActorAPI(Protocol)`을 구현하여 `deterministic_actions`, `sample_actions`, `log_prob_actions` 메서드를 제공
-
-### 구현 상세
-
-#### 1. Critic / Actor target 업데이트 분리
-
-- **Critic target**: trainer 내부 (`train()`/`update()` 내)에서만 soft_update. `pogo_multi_main`은 `call_trainer_update_target_network=False`로 **호출하지 않음**
-- **Actor target**: `_train_multi_actor`에서만 업데이트 (모든 알고리즘 공통)
-
-#### 2. `compute_energy_function`
-
-각 trainer가 구현. Actor1+의 energy function:
-
-- **IQL, AWAC**: `-Q(state, π(state))` 또는 `-A` (config의 `energy_function_type`으로 선택)
-- **SAC-N, EDAC**: `α·log_π - Q_min`
-- **CQL**: `α·log_π - Q` (BC/CQL stage에 따라 다름)
-- **TD3_BC**: `-Q(state, π(state))`
-
-**참고**: Actor0는 각 알고리즘의 원본 `train()`/`update()` 로직으로 업데이트되며, `compute_energy_function`은 사용하지 않습니다.
-
-#### 3. `action_for_loss`
-
-W2/Loss 계산 시 **미분 가능한** action 필요. `deterministic_actions()`는 `@torch.no_grad()`로 gradient가 끊기므로, Gaussian은 `get_mean_std()[0]`, stochastic은 `sample_actions`, deterministic은 `forward` 사용.
-
-#### 4. 평가 모드
-
-- Deterministic policy → deterministic 평가
-- Stochastic policy → policy에서 샘플링 (`actor_is_stochastic` 기반 자동 선택)
-
-#### 5. 기존 알고리즘 파일
-
-`iql.py`, `awac.py`, `cql.py` 등은 **최소한의 수정만 수행**:
-- `compute_energy_function`만 POGO용으로 추가
-- `log_prob()` → `log_prob_actions()` 통일 (CQL, IQL, AWAC)
-- `train()`/`update()` 내부 로직은 그대로 사용하여 Actor0를 업데이트합니다.
-
-#### 6. 코드 리팩토링 및 개선 (2026)
-
-- **네트워크 통합**: `algorithms/networks/` 패키지로 통합
-  - `actors.py` / `actors_jax.py`: PyTorch/JAX Actor 클래스
-  - `critics.py` / `critics_jax.py`: PyTorch/JAX Critic 클래스
-  - `mlp.py` / `mlp_jax.py`: MLP 빌딩 및 초기화 유틸리티
-  - `adapters.py`: `ActorAPI(Protocol)` 인터페이스
-- **유틸리티 통합**: 중복 함수들을 `algorithms/offline/utils_pytorch.py`로 통합
-  - `soft_update`, `ReplayBuffer`, `eval_actor`, `normalize_states`, `set_seed`, `wandb_init` 등
-- **인터페이스 명확화**: `ActorAPI(Protocol)`로 모든 Actor의 공통 인터페이스 정의
-  - `deterministic_actions(states) -> [B, A]`
-  - `sample_actions(states, K=1, seed=None) -> [B, K, A]`
-  - `log_prob_actions(states, actions) -> [B]` (PyTorch & JAX 모두 구현)
-- **최근 개선사항**:
-  - ✅ JAX Actor에 `log_prob_actions()` 메서드 추가 완료
-  - ✅ JAX Sinkhorn 구현을 OTT-jax 라이브러리 사용으로 변경
-  - ✅ PyTorch 알고리즘(CQL, IQL, AWAC)에서 `log_prob()` → `log_prob_actions()` 통일
-
-## 설치 및 실행
-
-### 설치
+### Installation
 
 ```bash
 pip install -r requirements/requirements.txt
 pip install geomloss PyYAML
-# JAX 버전 사용 시
+# For JAX-based algorithms (ReBRAC, FQL)
 pip install jax jaxlib flax optax ott-jax
+```
+
+Optional environment variables (e.g. for headless runs):
+
+```bash
 export D4RL_SUPPRESS_IMPORT_ERROR=1
 export MUJOCO_GL=egl
 ```
 
-### 실행 예시
+### Run
 
 ```bash
-# PyTorch 버전 (IQL)
-python -m algorithms.offline.pogo_multi_main \
-    --config_path configs/offline/pogo_multi/halfcheetah/medium_v2_iql.yaml
+# PyTorch (IQL + MPI)
+python -m algorithms.offline.mpi_main \
+  --config_path configs/offline/mpi/halfcheetah/medium_v2_iql.yaml
 
-# JAX 버전 (ReBRAC)
-python -m algorithms.offline.pogo_multi_jax \
-    --config_path configs/offline/pogo_multi/halfcheetah/medium_v2_rebrac.yaml
+# JAX (ReBRAC + MPI)
+python -m algorithms.offline.mpi_jax \
+  --config_path configs/offline/mpi/halfcheetah/medium_v2_rebrac.yaml
 ```
 
-**출력**: `results/{algorithm}/{env}/{task}/seed_{N}/checkpoints/`, `logs/`
+Outputs: checkpoints and logs under `results/` and `logs/` (if enabled).
 
-## 문제 해결
+---
 
-- **Import 에러**: `python -m algorithms.offline.pogo_multi_main` 형식으로 실행
-- **GeomLoss**: `pip install geomloss` (PyTorch 버전용)
-- **OTT-jax**: `pip install ott-jax` (JAX 버전용)
-- **Headless**: `export MUJOCO_GL=egl`
-- **Wandb**: config `use_wandb: true`(기본)면 활성화. 비활성화: `--no_wandb` 또는 config에 `use_wandb: false`
-- **공통 env**: run 스크립트는 `env_common.sh`를 source하여 D4RL/MUJOCO/PYTHONUNBUFFERED 설정
+## Theory (from the paper)
 
-## 참고
+### Geometric view of offline actor updates
 
-- **CORL**: [Clean Offline Reinforcement Learning](https://github.com/corl-team/CORL)
-- **POGO**: Policy Optimization as a Gradient Flow in Offline RL
-- **D4RL**: [Datasets for Deep Data-Driven Reinforcement Learning](https://github.com/Farama-Foundation/D4RL)
+- **Policy manifold** \(\mathcal{M}\): the policy class is treated as a statistical manifold with a chosen metric (e.g. Fisher–Rao or Wasserstein-2), inducing a geodesic distance \(d_{\mathcal{M}}\).
+- **Energy** \(\mathcal{E}[\pi]\): typically defined via the critic (e.g. \(\mathbb{E}_{a\sim\pi}[-\hat{Q}(s,a)]\) or \(-\mathbb{E}[A(s,a)]\)).
+- **Single Proximal Policy Improvement (SPI)**: one implicit Euler (JKO) step on \(\mathcal{M}\):
+  \[
+  \pi_{k+1} \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau}\,d_{\mathcal{M}}^2(\pi,\pi_k) \right).
+  \]
+  Many behavior-anchored offline actor objectives (e.g. TD3+BC, ReBRAC, IQL-style extraction) can be interpreted as one such SPI step from the behavior or a base policy.
 
-## 라이선스
+### Multi-step Proximal Policy Improvement (MPI)
 
-[LICENSE](LICENSE) 참조.
+- **Idea**: instead of a single proximal step per iteration, compose **K re-centered** proximal steps with the same energy and geometry:
+  - \(\pi_0 = \pi_{\mathrm{base}}\) (base algorithm’s actor after its usual update),
+  - \(\pi_i \in \arg\min_{\pi\in\mathcal{M}} \left( \mathcal{E}[\pi] + \frac{1}{2\tau_i}\,d_{\mathcal{M}}^2(\pi,\pi_{i-1}) \right)\), \(i=1,\ldots,K\).
+- This corresponds to a **finer implicit discretization** of the same gradient flow, allowing **controlled advancement** beyond dataset support while each step remains proximal to the previous iterate.
+- **Monotone descent**: the (estimated) energy decreases along \(\pi_0,\pi_1,\ldots,\pi_K\) (up to optimization error).
+
+### Implementation (plug-in refinement)
+
+At each training iteration:
+
+1. Run the base algorithm’s **critic update** and **actor update** → obtain \(\pi_0\) (base policy).
+2. Apply **MPI**: from \(\pi_0\), solve K re-centered proximal subproblems with the current \(\hat{\mathcal{E}}\) and \(d_{\mathcal{M}}\) → obtain \(\{\pi_i\}_{i=1}^K\).
+3. Use the refined policies (e.g. \(\pi_1\) or \(\pi_2\)) for rollout or evaluation; base algorithm’s critic and training logic are unchanged.
+
+So: **\(\pi_{\mathrm{base}}\)** = base algorithm actor; **\(\pi_1,\pi_2,\ldots\)** = MPI-refined policies (paper table reports \(\pi_{\mathrm{base}}\), \(\pi_1\), \(\pi_2\) on D4RL).
+
+---
+
+## Supported algorithms and geometry
+
+| Base algorithm (PyTorch) | Base algorithm (JAX) |
+|--------------------------|----------------------|
+| IQL, TD3+BC, CQL, AWAC, SAC-N, EDAC | ReBRAC, FQL |
+
+- **Geometry**: Wasserstein-2 (and Sinkhorn approximation where needed); diagonal-Gaussian and deterministic policies use closed-form \(d_{\mathcal{M}}\) where applicable.
+- **Energy** \(\hat{\mathcal{E}}\) is algorithm-specific (e.g. \(-\hat{Q}(s,\pi(s))\), \(-\hat{A}\), or entropy-regularized Q terms). Config key `energy_function_type` can switch between Q-based and advantage-based energy for IQL/AWAC.
+
+---
+
+## Project structure
+
+```
+MPI/
+├── algorithms/
+│   ├── networks/           # Shared networks (PyTorch & JAX): actors, critics, MLP, policy_call
+│   └── offline/
+│       ├── mpi_main.py     # PyTorch: multi-actor training (IQL, TD3+BC, CQL, AWAC, SAC-N, EDAC)
+│       ├── mpi_jax.py      # JAX: multi-actor training (ReBRAC, FQL)
+│       ├── mpi_policies.py # Policy protocol and adapters
+│       ├── utils_pytorch.py
+│       ├── utils_jax.py
+│       └── iql.py, td3_bc.py, cql.py, awac.py, sac_n.py, edac.py, rebrac.py, fql.py, ...
+├── configs/
+│   └── offline/
+│       ├── mpi/            # Algorithm/env/task YAML configs
+│       └── *_mpi_base.yaml
+└── README.md
+```
+
+- **Actor0** = base algorithm’s actor (one SPI-type update from behavior/base).
+- **Actor1, Actor2, …** = MPI refinement steps (re-centered proximal updates); their number and step sizes are set via config (e.g. `num_actors`, `w2_weights`).
+
+---
+
+## Configuration
+
+- **Algorithm**: `algorithm: iql | td3_bc | cql | awac | sac_n | edac` (PyTorch), or ReBRAC/FQL (JAX).
+- **MPI**: `num_actors`, `w2_weights` (one weight per refinement step from Actor1 onward).
+- **Sinkhorn** (when W2 is approximated): `sinkhorn_K`, `sinkhorn_blur`, `sinkhorn_backend`.
+- **Wandb**: `use_wandb`, `project`, `group`, `name`; or disable with `--no_wandb` / `use_wandb: false`.
+
+Example (IQL + MPI, 3 actors, first refinement weight 100):
+
+```yaml
+algorithm: iql
+num_actors: 3
+w2_weights: [100.0, 100.0]
+# ... env, seed, eval_freq, etc.
+```
+
+---
+
+## Implementation notes
+
+- **Critic**: updated only with the base actor (Actor0); no change to the base algorithm’s critic update.
+- **Distance \(d_{\mathcal{M}}\)**: for diagonal Gaussian policies, W2 is computed in closed form; otherwise Sinkhorn (e.g. GeomLoss for PyTorch, OTT for JAX) is used.
+- **Energy**: each algorithm implements its own energy (e.g. `compute_energy_function`); Actor1+ losses are energy + (weighted) \(d_{\mathcal{M}}^2(\pi_i,\pi_{i-1})\).
+- **Evaluation**: you can evaluate \(\pi_{\mathrm{base}}\) or any \(\pi_k\) (\(k\ge 1\)); the paper table reports \(\pi_{\mathrm{base}}\), \(\pi_1\), \(\pi_2\) on D4RL locomotion.
+
+---
+
+## Troubleshooting
+
+- **Import errors**: run as `python -m algorithms.offline.mpi_main` (or `mpi_jax`) from the repo root.
+- **GeomLoss**: `pip install geomloss` (PyTorch).
+- **OTT-jax**: `pip install ott-jax` (JAX).
+- **Headless**: `export MUJOCO_GL=egl`.
+- **Wandb**: set `use_wandb: false` in config or pass `--no_wandb`.
+
+---
+
+## References
+
+- **MPI**: Multi-step Proximal Policy Improvement in Offline Reinforcement Learning (geometric view: policy manifold, SPI, re-centered proximal steps, JKO-style discretization).
+- **Baselines**: TD3+BC, ReBRAC, IQL, CQL, AWAC, SAC-N, EDAC, FQL.
+- **Benchmarks**: D4RL (e.g. MuJoCo locomotion, AntMaze).
+- **D4RL**: [Datasets for Deep Data-Driven Reinforcement Learning](https://github.com/Farama-Foundation/D4RL).
+
+---
+
+## License
+
+See [LICENSE](LICENSE).

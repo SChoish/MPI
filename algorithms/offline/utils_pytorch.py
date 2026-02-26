@@ -1,4 +1,4 @@
-# POGO Multi-Actor 공통 유틸리티 (PyTorch 버전)
+# MPI 공통 유틸리티 (PyTorch 버전)
 # PyTorchAlgorithmInterface와 관련 클래스들을 정의
 
 from dataclasses import dataclass
@@ -16,7 +16,7 @@ TensorBatch = Tuple[torch.Tensor, ...]
 
 # 각 알고리즘의 인터페이스 구현은 각 알고리즘 파일에서 정의됨
 # 순환 참조 방지를 위해 여기서는 import하지 않음
-# 대신 pogo_multi_main.py에서 직접 import하도록 변경
+# 대신 mpi_main.py에서 직접 import하도록 변경
 
 
 class PyTorchAlgorithmInterface:

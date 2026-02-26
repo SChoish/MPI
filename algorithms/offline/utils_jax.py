@@ -1,10 +1,11 @@
-# POGO Multi-Actor 공통 유틸리티
+# MPI 공통 유틸리티
 # AlgorithmInterface와 관련 클래스들을 정의
 
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 import os
 import random
+import sys
 
 import gym
 import jax
@@ -14,6 +15,12 @@ from flax.core import FrozenDict
 from flax import linen as nn
 
 import d4rl  # noqa
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 # 순환 참조 방지를 위해 타입 힌트만 사용
 from typing import TYPE_CHECKING
@@ -246,6 +253,7 @@ def evaluate(
     action_fn: Callable,
     num_episodes: int,
     seed: int,
+    show_progress: bool = False,
 ) -> np.ndarray:
     """Evaluate policy over multiple episodes (PyTorch의 eval_actor와 대응)
     
@@ -255,30 +263,54 @@ def evaluate(
         action_fn: Action function (params, obs) -> action
         num_episodes: Number of episodes to evaluate
         seed: Base seed for evaluation
+        show_progress: If True, show tqdm progress bar over episodes (stderr)
     
     Returns:
         Array of episode returns [num_episodes]
     """
-    returns = []
-    eval_seeds = make_eval_seeds(seed, num_episodes)
-    for ep_seed in eval_seeds:
-        # antmaze 등 reset 시 전역 np.random을 참조하는 환경이 있어 고정
-        np.random.seed(ep_seed)
-        seed_env_spaces(env, ep_seed)
-        reset_result = reset_env_with_seed(env, ep_seed)
-        
-        obs = reset_result[0] if isinstance(reset_result, tuple) else reset_result
-        done = False
-        total_reward = 0.0
-        while not done:
-            action = np.asarray(jax.device_get(action_fn(params, obs)))
-            step_out = env.step(action)
-            if len(step_out) == 5:
-                obs, reward, terminated, truncated, _ = step_out
-                done = terminated or truncated
-            else:
-                obs, reward, done, _ = step_out
-            total_reward += reward
-        returns.append(total_reward)
+    # 연속으로 evaluate()를 여러 번 호출해도 동일 결과가 나오도록, 호출 시작 시 전역/환경 시드 고정
+    np.random.seed(seed)
+    seed_env_spaces(env, seed)
 
-    return np.array(returns)
+    # d4rl antmaze 등에서 "Target Goal:" 등 불필요한 print 억제
+    _old_stdout = sys.stdout
+    try:
+        try:
+            sys.stdout = open(os.devnull, "w")
+        except Exception:
+            pass
+        returns = []
+        eval_seeds = make_eval_seeds(seed, num_episodes)
+        if show_progress:
+            eval_seeds = tqdm(eval_seeds, total=num_episodes, desc="Eval episodes", unit="ep", file=sys.stderr, dynamic_ncols=True)
+        for ep_seed in eval_seeds:
+            # antmaze 등 reset 시 전역 np.random·random 참조하는 환경이 있어 에피소드마다 고정
+            np.random.seed(ep_seed)
+            random.seed(ep_seed)
+            seed_env_spaces(env, ep_seed)
+            # gym.Env 내부 np_random도 동기화 (reset(seed=)만으로 부족한 경우 대비)
+            if hasattr(env, "unwrapped") and hasattr(env.unwrapped, "np_random"):
+                env.unwrapped.np_random = np.random.RandomState(ep_seed)
+            reset_result = reset_env_with_seed(env, ep_seed)
+            
+            obs = reset_result[0] if isinstance(reset_result, tuple) else reset_result
+            done = False
+            total_reward = 0.0
+            while not done:
+                action = np.asarray(jax.device_get(action_fn(params, obs)))
+                step_out = env.step(action)
+                if len(step_out) == 5:
+                    obs, reward, terminated, truncated, _ = step_out
+                    done = terminated or truncated
+                else:
+                    obs, reward, done, _ = step_out
+                total_reward += reward
+            returns.append(total_reward)
+        return np.array(returns)
+    finally:
+        try:
+            if sys.stdout != _old_stdout and hasattr(sys.stdout, "close"):
+                sys.stdout.close()
+        except Exception:
+            pass
+        sys.stdout = _old_stdout

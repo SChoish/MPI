@@ -32,7 +32,7 @@ def _ensure_policy(policy: nn.Module, action_dim: Optional[int] = None, max_acti
             return policy  # CQL/SAC-N/EDAC-style, wrap 하지 않음
     except Exception:
         pass
-    from algorithms.offline.pogo_policies import PolicyAdapter
+    from algorithms.offline.mpi_policies import PolicyAdapter
 
     ad = getattr(policy, "action_dim", action_dim)
     ma = getattr(policy, "max_action", max_action)

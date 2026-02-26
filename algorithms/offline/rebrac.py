@@ -515,7 +515,7 @@ def main(config: Config):
 
 
 # ============================================================================
-# ReBRACAlgorithm for POGO Multi-Actor
+# ReBRACAlgorithm for MPI
 # ============================================================================
 
 from .utils_jax import AlgorithmInterface
@@ -524,7 +524,7 @@ from .utils_jax import AlgorithmInterface
 class ReBRACAlgorithm(AlgorithmInterface):
     """ReBRAC 알고리즘 구현체
     
-    ReBRAC (Regularized Behavior Cloning) 알고리즘을 POGO Multi-Actor 구조에 통합.
+    ReBRAC (Regularized Behavior Cloning) 알고리즘을 MPI 구조에 통합.
     """
     def __init__(
         self,

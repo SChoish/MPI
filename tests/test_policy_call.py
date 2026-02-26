@@ -10,7 +10,7 @@ import torch
 # Add project root for imports
 sys.path.insert(0, ".")
 
-from algorithms.offline.pogo_policies import (
+from algorithms.offline.mpi_policies import (
     DeterministicMLP,
     GaussianMLP,
     StochasticMLP,

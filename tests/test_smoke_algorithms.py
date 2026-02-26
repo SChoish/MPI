@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 
-from algorithms.offline.pogo_policies import GaussianMLP, TanhGaussianMLP
+from algorithms.offline.mpi_policies import GaussianMLP, TanhGaussianMLP
 from algorithms.networks import get_action, sample_K_actions
 
 
@@ -68,24 +68,24 @@ def test_get_action_deterministic_eval():
 
 
 CONFIG_MAP = {
-    "td3_bc": "configs/offline/pogo_multi/halfcheetah/medium_v2_td3_bc.yaml",
-    "cql": "configs/offline/cql_pogo_base.yaml",
-    "sac_n": "configs/offline/sac_n_pogo_base.yaml",
-    "edac": "configs/offline/edac_pogo_base.yaml",
-    "awac": "configs/offline/awac_pogo_base.yaml",
+    "td3_bc": "configs/offline/mpi/halfcheetah/medium_v2_td3_bc.yaml",
+    "cql": "configs/offline/cql_mpi_base.yaml",
+    "sac_n": "configs/offline/sac_n_mpi_base.yaml",
+    "edac": "configs/offline/edac_mpi_base.yaml",
+    "awac": "configs/offline/awac_mpi_base.yaml",
 }
 
 
 def run_smoke_training(algorithm: str, steps: int = 300) -> bool:
-    """pogo_multi_main으로 알고리즘 steps만큼 학습 실행"""
-    config_path = CONFIG_MAP.get(algorithm, "configs/offline/cql_pogo_base.yaml")
+    """mpi_main으로 알고리즘 steps만큼 학습 실행"""
+    config_path = CONFIG_MAP.get(algorithm, "configs/offline/cql_mpi_base.yaml")
     env = os.environ.copy()
     env["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
     env["MUJOCO_GL"] = "egl"
     env["WANDB_MODE"] = "disabled"
 
     cmd = [
-        sys.executable, "-u", "-m", "algorithms.offline.pogo_multi_main",
+        sys.executable, "-u", "-m", "algorithms.offline.mpi_main",
         "--config_path", config_path,
         "--algorithm", algorithm,
         "--env", "halfcheetah-medium-v2",

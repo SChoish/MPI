@@ -320,7 +320,7 @@ class ImplicitQLearning:
     def compute_energy_function(
         self, actor: nn.Module, state: torch.Tensor, actions: Optional[torch.Tensor] = None, seed: Optional[int] = None, energy_type: str = "q"
     ) -> torch.Tensor:
-        """Energy function: -Q 또는 -A (POGO multi-actor Actor1+용)
+        """Energy function: -Q 또는 -A (MPI multi-actor Actor1+용)
         
         Args:
             actor: Actor network

@@ -15,7 +15,7 @@ class DetActor(nn.Module):
     """ReBRAC Deterministic Actor
     
     ReBRAC 알고리즘에서 사용하는 deterministic actor.
-    POGO Multi-Actor에서도 사용 가능.
+    MPI에서도 사용 가능.
     """
     action_dim: int
     hidden_dim: int = 256

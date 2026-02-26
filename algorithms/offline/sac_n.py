@@ -206,7 +206,7 @@ class SACN:
     def compute_energy_function(
         self, actor: nn.Module, state: torch.Tensor, actions: Optional[torch.Tensor] = None, seed: Optional[int] = None
     ) -> torch.Tensor:
-        """Energy function: alpha*log_pi - Q_min (POGO multi-actor Actor1+용)
+        """Energy function: alpha*log_pi - Q_min (MPI multi-actor Actor1+용)
         
         Args:
             actor: Actor network

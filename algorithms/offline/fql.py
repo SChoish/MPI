@@ -1,6 +1,6 @@
-# FQL Algorithm for POGO Multi-Actor integration
+# FQL Algorithm for MPI integration
 # Adapted from https://github.com/seohongpark/fql
-# Note: FQLFlowPolicy는 pogo_policies_jax.py에 정의되어 있음 (참고용, 실제로는 사용하지 않음)
+# Note: FQLFlowPolicy는 mpi_policies_jax.py에 정의되어 있음 (참고용, 실제로는 사용하지 않음)
 
 from typing import Dict, Optional, Tuple
 
@@ -15,9 +15,9 @@ from .rebrac import ActorTrainState, CriticTrainState, Metrics
 
 
 class FQLAlgorithm(AlgorithmInterface):
-    """FQL Algorithm implementation for POGO Multi-Actor
+    """FQL Algorithm implementation for MPI
     
-    FQL (Flow Q-Learning) 알고리즘을 POGO Multi-Actor 구조에 통합.
+    FQL (Flow Q-Learning) 알고리즘을 MPI 구조에 통합.
     ReBRAC와 동일한 방식으로 AlgorithmInterface를 구현.
     
     FQL의 구조:
@@ -28,7 +28,7 @@ class FQLAlgorithm(AlgorithmInterface):
     - Actor0: flow matching loss + (-Q + alpha(actor_0 - pi_flow)^2)
       - actor_0: StochasticMLP에서 샘플링 (one-step BC policy)
       - pi_flow: flow_policy에서 flow matching으로 계산된 action
-    - Actor1+: Q loss만 (-Q, W2는 pogo_multi_jax에서 자동 추가됨)
+    - Actor1+: Q loss만 (-Q, W2는 mpi_jax에서 자동 추가됨)
     """
     def __init__(
         self,

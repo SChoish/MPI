@@ -12,7 +12,7 @@ from .mlp_jax import build_mlp_layers, build_base_network, uniform_init
 
 
 class GaussianMLP(nn.Module):
-    """POGO Gaussian Actor: mean에 tanh가 적용된 상태에서 샘플링
+    """MPI Gaussian Actor: mean에 tanh가 적용된 상태에서 샘플링
     mean = tanh(...) * max_action (bounded mean)
     그 mean, std로 Gaussian 샘플링
     Closed form W2 distance 사용 가능
@@ -142,7 +142,7 @@ class GaussianMLP(nn.Module):
 
 
 class TanhGaussianMLP(nn.Module):
-    """POGO TanhGaussian Actor: unbounded Gaussian에서 샘플링 후 tanh 적용
+    """MPI TanhGaussian Actor: unbounded Gaussian에서 샘플링 후 tanh 적용
     mean = ... (unbounded)
     mean, std로 Gaussian 샘플링 (unbounded space)
     그 다음 tanh를 적용하여 bounded로 만듦
@@ -281,7 +281,7 @@ class TanhGaussianMLP(nn.Module):
 
 
 class StochasticMLP(nn.Module):
-    """POGO Stochastic Actor: state + z -> action
+    """MPI Stochastic Actor: state + z -> action
     
     일반적인 stochastic policy
     FQL의 flow policy로도 사용 가능 (FQLFlowPolicy 대신 사용)
@@ -370,7 +370,7 @@ class StochasticMLP(nn.Module):
 
 
 class DeterministicMLP(nn.Module):
-    """POGO Deterministic Actor: state -> action"""
+    """MPI Deterministic Actor: state -> action"""
     action_dim: int
     max_action: float = 1.0
     hidden_dim: int = 256

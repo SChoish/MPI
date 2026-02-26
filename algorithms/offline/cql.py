@@ -509,7 +509,7 @@ class ContinuousCQL:
         actions: Optional[torch.Tensor] = None,
         seed: Optional[int] = None,
     ) -> torch.Tensor:
-        """Energy function (POGO multi-actor Actor1+용). BC/CQL stage, alpha 처리.
+        """Energy function (MPI multi-actor Actor1+용). BC/CQL stage, alpha 처리.
         
         Args:
             actor: Actor network

@@ -4,7 +4,11 @@ Offline reinforcement learning must balance two goals: policy updates should sta
 
 MPI develops ideas first explored in [**POGO**](https://github.com/SChoish/POGO), an earlier study of transport-map policies and JKO/Sinkhorn-based policy flows. The present formulation turns that geometric exploration into a re-centered proximal framework that applies to standard behavior-regularized actor updates across multiple policy geometries and base algorithms.
 
-**Research contributors:** [Soohyun Choi](https://github.com/SChoish) and [Seonvin Cho](https://github.com/seonvin0319).
+**Paper authors:** [Soohyun Choi](https://github.com/SChoish)<sup>*</sup>,
+[Seonvin Cho](https://github.com/seonvin0319)<sup>*</sup>, and Prof. Songnam Hong<sup>†</sup>  
+<sup>*</sup>Equal contribution. <sup>†</sup>Corresponding author.
+
+**Paper:** arXiv link forthcoming.
 
 **MPI** interprets many behavior-anchored offline actor updates as a **single proximal policy improvement (SPI)** step—an implicit discretization of a manifold gradient flow induced by a critic-defined energy. MPI then advances the same flow through multiple re-centered proximal steps per iteration. Re-centering changes the finite-step optimization path and generally its endpoint, so MPI is not equivalent to taking more gradient steps on the same fixed-anchor loss or merely weakening a regularization coefficient. The framework accommodates multiple policy geometries (e.g. Fisher–Rao and Wasserstein-2) and works with deterministic and diagonal-Gaussian policies.
 

@@ -68,7 +68,7 @@ Outputs: checkpoints and logs under `results/` and `logs/` (if enabled).
 - **Additional refinement**: at a common local horizon $h$, increasing $K$ also increases $T=Kh$; this is not subdivision of a fixed horizon.
 - **Estimated-energy descent**: for a fixed energy, feasible preceding policies, and sufficiently accurate proximal solves, estimated energy decreases up to optimization error. This does not guarantee monotonic true-return improvement.
 
-### Implementation (plug-in refinement)
+### Implementation (public plug-in entry points)
 
 At each training iteration (actor updates follow the base algorithm's schedule):
 
@@ -125,7 +125,7 @@ MPI/
 - **Sinkhorn** (when W2 is approximated): `sinkhorn_K`, `sinkhorn_blur`, `sinkhorn_backend`.
 - **Wandb**: `use_wandb`, `project`, `group`, `name`; or disable with `--no_wandb` / `use_wandb: false`.
 
-`num_actors` counts all actors (the paper's $K$). These entry points expose base-objective coefficients and `w2_weights`, not a direct $T$ or $h$ option; changing `num_actors` alone does not enforce the paper's equal-$h=T/K$ schedule. Matching that schedule requires coordinating the first-stage and later-stage coefficients with their energy and distance normalizations.
+`num_actors` counts all actors (the paper's $K$). The public plug-in entry points above expose base-objective coefficients and `w2_weights`, not a direct $T$ or $h$ option; changing `num_actors` alone does not enforce the paper's equal-$h=T/K$ schedule. The v2 sweep implementation instead computes $h=T/K$ from its horizon and depth arguments, as described below. The YAML example here remains a plug-in configuration, not a v2 horizon-sweep configuration.
 
 Example (IQL + MPI, 3 actors, first refinement weight 100):
 
@@ -140,10 +140,27 @@ w2_weights: [100.0, 100.0]
 
 ## Implementation notes
 
-- **Critic**: retains the base algorithm's value-learning procedure. For TD3+BC, Actor0 supplies bootstrap actions and later actors only affect extraction; IQL's value targets are actor-independent. At fixed $T$, changing $K$ also changes the first-stage coefficient, so TD3+BC critic targets can differ across depths.
+- **Critic**: retains the base algorithm's value-learning procedure. For TD3+BC, Actor0 supplies bootstrap actions and later actors only affect extraction; IQL's value targets are actor-independent. In the fixed-$T$ sweep, changing $K$ also changes the first-stage coefficient, so TD3+BC critic targets can differ across depths.
 - **Distance** $d_{\mathcal{M}}$: for diagonal Gaussian policies, W2 is computed in closed form; otherwise Sinkhorn (e.g. GeomLoss for PyTorch, OTT for JAX) is used.
 - **Energy**: each algorithm implements its own energy (e.g. `compute_energy_function`); Actor1+ losses are energy + (weighted) $d_{\mathcal{M}}^2(\pi_i,\pi_{i-1})$.
 - **Evaluation**: you can evaluate $\pi_{\mathrm{base}}$ or any later actor; v2 reports final-stage policies by total horizon $T$ and depth $K$.
+
+### v2 horizon–depth sweep implementation
+
+The experiment implementation in `MPI_sweep` uses `train_td3bc.py`, `train_iql_mpi.py`, and `launch_mpi_sweep.py`. Its arguments and update rules differ from the public plug-in interface above; these sweep files are not included in this repository.
+
+| Sweep setting | Meaning |
+|---------------|---------|
+| Trainer `--tau`; launcher `--taus` | Nominal total horizon $T$ (TD3+BC: $T=\alpha/2$), not the target-network update rate |
+| Trainer `--mpi-steps`; launcher `--hops` | Total stage count $K$, including the first dataset-anchored actor |
+| Computed local horizon | $h=T/K$ at every stage; $K=1$ is the single-stage control |
+| TD3+BC `--integrator implicit` / `explicit` | I-MPI / E-MPI; the chain uses the sweep's `bar` method token |
+| `--polyak` | Separate target-network soft-update coefficient |
+
+- **TD3+BC chain:** the critic updates first. On each delayed actor update, $K$ independently initialized persistent actors, each with its own Adam state, update once in order on the same minibatch. The first uses dataset actions; later actors use the freshly updated, detached predecessor. Only the first actor supplies bootstrap targets; evaluation uses the final actor.
+- **Implicit and explicit objectives:** I-MPI uses $-2h\,\mathbb{E}[Q_1]/C_k$ plus coordinate-mean squared distance to the reference. The first-stage detached scale $C_1$ uses the actor's pre-update actions; later scales use predecessor actions, with a $10^{-6}$ safeguard. E-MPI regresses onto the detached, clipped target $\nu_k+n_a h\nabla_a Q_1/C_k$, using dataset actions for its first reference. The factor $n_a$ matches the coordinate-mean distance normalization.
+- **IQL extraction:** `iql_mpi_config.py` computes $h=T/K$. Under the native Gaussian settings, the first Q+BC actor uses likelihood-BC weight $1/h$, while the first AWR actor uses exponent coefficient $h$ (weights capped at 100). Later actors use expected-Q energy plus $d^2/(2h)$, with W2 after Q+BC and Fisher–Rao after AWR. Gaussian distances sum action coordinates and Q is unnormalized by default. For $K>1$, an independent full-$T$ extraction control is also updated; its optimizer cost is additional to the chain. Value targets remain actor-independent.
+- **Comparisons:** hold `--tau` fixed while varying `--mpi-steps` to test subdivision. To add stages at a common $h$, set `--tau` to $Kh$ for each depth. Equal nominal horizons across extraction objectives and geometries do not imply equal action displacement.
 
 ---
 
